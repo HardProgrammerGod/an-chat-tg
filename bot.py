@@ -55,7 +55,7 @@ def is_rate_limited(user_id: int, action: str, cooldown: int) -> bool:
     return False
 
 # --- Limits Settings ---
-CHANNEL = "@"   # ur tg @
+CHANNEL = "@nedo_dev"   # ur tg @
 LIMIT = 5                   # 5 times pro stund
 RESET_SECONDS = 3600        # 1 stnd limit
 
