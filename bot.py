@@ -8,6 +8,7 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import Message
 import database
+from aiohttp import web
 
 # --- Initialization ---
 load_dotenv()
@@ -42,7 +43,7 @@ async def notify_user(user_id: int, text: str):
     except Exception as e:
         logger.warning(f"Failed to send message to {user_id}: {e}")
 
-# --- Rate limiting (short anti-spam cooldown) ---
+# --- Rate limiting ---
 last_action_time: Dict[str, float] = {}
 
 def is_rate_limited(user_id: int, action: str, cooldown: int) -> bool:
@@ -55,9 +56,9 @@ def is_rate_limited(user_id: int, action: str, cooldown: int) -> bool:
     return False
 
 # --- Limits Settings ---
-CHANNEL = "@nedo_dev"   # ur tg @
-LIMIT = 5                   # 5 times pro stund
-RESET_SECONDS = 3600        # 1 stnd limit
+CHANNEL = "@nedo_dev"
+LIMIT = 5
+RESET_SECONDS = 3600
 
 # --- Check subscription ---
 async def is_subscribed(user_id: int, channel_username: str) -> bool:
@@ -104,7 +105,6 @@ async def cmd_next(message: Message):
         await message.answer("You are blocked and cannot use this feature.")
         return
 
-    # --- Limits check ---
     info = database.get_limit_info(uid)
     used, reset_time, premium = info["used_count"], info["reset_time"], info["premium"]
 
@@ -129,16 +129,13 @@ async def cmd_next(message: Message):
         used += 1
 
     database.update_limit(uid, used, reset_time, premium)
-    # --- End limits check ---
 
-    # End current chat if exists
     partner = database.get_partner(uid)
     if partner:
         database.remove_chat_by_users(uid, partner)
         await notify_user(partner, "🔴 Your partner has left the chat.")
         await message.answer("🔴 You left the chat. Searching for a new partner...")
 
-    # Find first in queue
     candidate = database.get_first_in_queue(exclude_user_id=uid)
     if candidate:
         database.remove_from_queue(candidate)
@@ -281,12 +278,28 @@ async def on_shutdown():
     await bot.session.close()
     logger.info("Bot stopped")
 
-# --- Run ---
+# --- Minimal web server for Render ---
+async def handle(request):
+    return web.Response(text="OK")
+
+app = web.Application()
+app.add_routes([web.get("/", handle)])
+
+async def start_web_server():
+    port = int(os.environ.get("PORT", 8000))
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    logger.info(f"Web server running on port {port}")
+
+# --- Main ---
 async def main():
-    try:
-        await dp.start_polling(bot, on_startup=on_startup, on_shutdown=on_shutdown)
-    finally:
-        await bot.session.close()
+    await start_web_server()
+    loop = asyncio.get_event_loop()
+    loop.create_task(dp.start_polling(bot, on_startup=on_startup, on_shutdown=on_shutdown))
+    while True:
+        await asyncio.sleep(3600)
 
 if __name__ == "__main__":
     asyncio.run(main())
